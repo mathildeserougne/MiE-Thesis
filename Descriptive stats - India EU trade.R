@@ -1,5 +1,5 @@
 ######### DESCRIPTIVE STATISTICS ON INDIAN TRADE WITH EU PARTNERS ############
-
+ 
 # First assessment made on the year 2019 (before covid and before CBAM announcements)
 # Using BACI dataset, 01-2025 version
 
