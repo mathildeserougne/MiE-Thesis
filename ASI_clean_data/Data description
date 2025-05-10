@@ -1,0 +1,7 @@
+All raw data dowloaded via https://mospi.gov.in/asi-summary-results 
+
+Data processed as described by "Descriptive stats - ASI info.R" file in this repository
+  
+- ASI_clean_xxxx : clean formatted data from the file corresponding to xx-xx year
+- ASI_all_years : panel data. industrial groups, across years, and corresponding economic characteristics.
+- ASI_annual_series: clean formatted data. aggregated (values for all industrial sectors in India), economic variables measured from 1989-1990 to 2022-2023.
