@@ -19,8 +19,39 @@ library(writexl)
 ############################################################################
 ## PRINCIPAL CHARACTERISTICS TABLES = INFORMATION, DECOMPOSED ACROSS SECTORS
 
-# before 2014, the data is available but only in pdf format
-# for now, we chose not to spend more time on sth not adapted at all.
+# all years prior to 2010 are in PDF format. not adapted.
+
+# year 2010-2011
+asi_principal_char10_11 <- read_excel("~/work/pcp_c_ind_group_10_11.xlsx",  skip = 4)
+# deleting some rows corresponding to the layout of the xls doc
+asi_clean10_11 <- asi_principal_char10_11[-c(2), ]
+asi_clean10_11 <- asi_clean10_11[-1, ]
+# adding a "year" variable for the upcoming merge
+asi_clean10_11$Year <- 2011
+# overview
+head(asi_clean10_11)
+
+# year 2011-2012
+asi_principal_char11_12 <- read_excel("~/work/pcp_c_ind_group_1112.xlsx",  skip = 4)
+# deleting some rows corresponding to the layout of the xls doc
+asi_clean11_12 <- asi_principal_char11_12[-c(2), ]
+asi_clean11_12 <- asi_clean11_12[-1, ]
+# adding a "year" variable for the upcoming merge
+asi_clean11_12$Year <- 2012
+# overview
+head(asi_clean11_12)
+
+# year 2012-2013
+asi_principal_char12_13 <- read_excel("~/work/pcp_c_ind_group_1213.xlsx",  skip = 4)
+# deleting some rows corresponding to the layout of the xls doc
+asi_clean12_13 <- asi_principal_char12_13[-c(2), ]
+asi_clean12_13 <- asi_clean12_13[-1, ]
+# adding a "year" variable for the upcoming merge
+asi_clean12_13$Year <- 2013
+# overview
+head(asi_clean12_13)
+
+# for 2013-2014, not formatted (only in PDF) so we ignore that year
 
 # year 2014-2015
 asi_principal_char14_15 <- read_excel("~/work/pcp_c_ind_group_1415.xlsx",  skip = 4)
@@ -119,6 +150,10 @@ asi_clean22_23$Year <- 2023
 head(asi_clean22_23)
 
 ## dowloading the clean data
+write_xlsx(asi_clean10_11, path = "~/work/ASI_clean_1011.xlsx")
+write_xlsx(asi_clean11_12, path = "~/work/ASI_clean_1112.xlsx")
+write_xlsx(asi_clean12_13, path = "~/work/ASI_clean_1213.xlsx")
+#nothing for 1314
 write_xlsx(asi_clean14_15, path = "~/work/ASI_clean_1415.xlsx")
 write_xlsx(asi_clean15_16, path = "~/work/ASI_clean_1516.xlsx")
 write_xlsx(asi_clean16_17, path = "~/work/ASI_clean_1617.xlsx")
@@ -151,7 +186,31 @@ table(asi_all_years$Year)
 unique(asi_all_years$Description) 
 
 # downloading it
-write_xlsx(asi_all_years, path = "~/work/ASI_all_years.xlsx")
+write_xlsx(asi_all_years, path = "~/work/ASI_all_years14-23.xlsx")
+
+
+###  doing the same thing but with the gap in 2013-2014
+asi_all_years_ext <- bind_rows(
+  asi_clean10_11,
+  asi_clean11_12,
+  asi_clean12_13,
+  asi_clean14_15,
+  asi_clean15_16,
+  asi_clean16_17,
+  asi_clean17_18,
+  asi_clean18_19,
+  asi_clean19_20,
+  asi_clean20_21,
+  asi_clean21_22,
+  asi_clean22_23
+)
+asi_all_years_ext$Description[is.na(asi_all_years_ext$Description)] <- "All India"
+# taking a look at the product
+head(asi_all_years_ext)
+table(asi_all_years_ext$Year)         
+unique(asi_all_years_ext$Description) 
+# downloading it
+write_xlsx(asi_all_years_ext, path = "~/work/ASI_all_years10-23.xlsx")
 
 
 ###############################################################################
