@@ -258,10 +258,40 @@ write_xlsx(clean_an_series_22_23, path = "~/work/ASI_annual_series.xlsx")
 
 ######### ALL INDUSTRIES ?
 
-# faire un truc avec l'évolution du capital, de l'investissement
-# un truc sur les employés 
-# capital formation
+colnames(clean_an_series_22_23)
+
+# un truc sur les employés n
 # added value and profit
+
+##  MEASURES OF INVESTMENT AND CAPITAL FORMATION
+# GFCF represents the annual level of investment.
+# NFCF reflects the actual growth of productive capital (GFCF - K depreciation)
+
+# re-formatting the dates (from 1989-90 to 1989)
+clean_an_series_22_23 <- clean_an_series_22_23 %>%
+  mutate(Year_clean = as.numeric(str_sub(Year, 1, 4)))  
+
+# long format reshape
+df_long <- clean_an_series_22_23 %>%
+  select(Year_clean,
+         Gross = `26.GROSS FIXED CAPITAL  FORMATION`,
+         Net = `25.NET FIXED CAPITAL  FORMATION`) %>%
+  pivot_longer(cols = c(Gross, Net),
+               names_to = "Type",
+               values_to = "Capital_Formation")
+
+# ggplot
+ggplot(df_long, aes(x = Year_clean, y = Capital_Formation, color = Type, group = Type)) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  labs(
+    title = "Gross and net capital formation in the Indian industry (all sectors, 1989–2022)",
+    x = "Year",
+    y = "Capital formation (Rs. Lakh)",
+    color = "Type"
+  ) +
+  scale_x_continuous(breaks = seq(min(df_long$Year_clean), max(df_long$Year_clean), by = 2)) +
+  theme_minimal()
 
 
 ######### THEN, SOMETHING PER SECTOR 
