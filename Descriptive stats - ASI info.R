@@ -12,6 +12,7 @@ library(readxl)
 library(tidyr)
 install.packages("writexl")
 library(writexl)
+library(scales)
 
 ####################################################################################
 ################################# data #############################################
@@ -260,9 +261,6 @@ write_xlsx(clean_an_series_22_23, path = "~/work/ASI_annual_series.xlsx")
 
 colnames(clean_an_series_22_23)
 
-# un truc sur les employés n
-# added value and profit
-
 ##  MEASURES OF INVESTMENT AND CAPITAL FORMATION
 # GFCF represents the annual level of investment.
 # NFCF reflects the actual growth of productive capital (GFCF - K depreciation)
@@ -280,7 +278,11 @@ df_long <- clean_an_series_22_23 %>%
                names_to = "Type",
                values_to = "Capital_Formation")
 
-# ggplot
+# deleting potential separators or random spaces before numeric values
+df_long <- df_long %>%
+  mutate(Capital_Formation = parse_number(Capital_Formation))
+
+# ggplot v1
 ggplot(df_long, aes(x = Year_clean, y = Capital_Formation, color = Type, group = Type)) +
   geom_line(linewidth = 1.2) +
   geom_point() +
@@ -293,6 +295,27 @@ ggplot(df_long, aes(x = Year_clean, y = Capital_Formation, color = Type, group =
   scale_x_continuous(breaks = seq(min(df_long$Year_clean), max(df_long$Year_clean), by = 2)) +
   theme_minimal()
 
+
+# CLEAN ggplot with separators
+ggplot(df_long, aes(x = Year_clean, y = Capital_Formation, color = Type, group = Type)) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  labs(
+    title = "Gross and net capital formation in the Indian industry (all sectors, 1989–2022)",
+    x = "Year",
+    y = "Capital formation (Rs. Lakh)",
+    color = "Type"
+  ) +
+  scale_y_continuous(labels = label_comma()) +  # séparateurs de milliers (ex: 1,000,000)
+  scale_x_continuous(breaks = seq(min(df_long$Year_clean), max(df_long$Year_clean), by = 2)) +
+  theme_minimal()
+
+
+
+
+
+## un truc sur les employés n
+## added value and profit
 
 ######### THEN, SOMETHING PER SECTOR 
 
