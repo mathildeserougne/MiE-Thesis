@@ -18,3 +18,7 @@ library(zoo)
 
 
 ############# PRINCIPAL CHARACTERISTICS PER SECTOR ############################
+
+asi_all_years <- read_excel("~/work/MiE-Thesis/ASI_clean_data/ASI_all_years10-23.xlsx")
+
+
