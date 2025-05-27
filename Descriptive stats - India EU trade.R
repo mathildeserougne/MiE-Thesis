@@ -26,6 +26,8 @@ baci <- baci %>%
     quantity = q
   )
 
+head(baci)
+
 # Merging baci with the country_codes to get country names for exporter and importer
 baci <- baci %>%
   left_join(country_codes, by = c("exporter" = "country_code")) %>%
@@ -83,6 +85,56 @@ ggplot(total_exports_grouped, aes(x = "", y = total_exports, fill = destination_
   labs(title = "2019 Indian exports in their main destinations (all sectors)",
        fill = "Destination") +
   theme_void()
+
+
+## Importance of India among European imports ?
+
+# imports to europe
+baci_imports_eu <- baci %>%
+  filter(importer %in% eu_members) %>%
+  mutate(
+    origin = as.character(exporter_name)
+  )
+
+# exporting countries to europe
+imports_grouped <- baci_imports_eu %>%
+  group_by(origin) %>%
+  summarise(total_imports = sum(value, na.rm = TRUE), .groups = "drop")
+
+# top 10 partners (as origins of imports)
+top10_origins <- imports_grouped %>%
+  slice_max(order_by = total_imports, n = 10) %>%
+  pull(origin)
+
+# "Rest of the world"
+imports_grouped <- imports_grouped %>%
+  mutate(origin_grouped = ifelse(origin %in% top10_origins, origin, "Rest of the world")) %>%
+  group_by(origin_grouped) %>%
+  summarise(total_imports = sum(total_imports), .groups = "drop")
+
+# percentage, labels
+imports_grouped <- imports_grouped %>%
+  mutate(
+    pct = total_imports / sum(total_imports),
+    label = paste0(round(pct * 100, 1), "%")
+  )
+
+# Camembert
+ggplot(imports_grouped, aes(x = "", y = total_imports, fill = origin_grouped)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = label),
+            position = position_stack(vjust = 0.5),
+            size = 3.5) +
+  labs(title = "2019 Main origins of EU imports (all sectors)",
+       fill = "Origin (exporting country)") +
+  theme_void()
+
+# ok issue because most of them are european countries (within area trade)
+# so i have to group countries as european importers to eliminate them
+
+
+
 
 
 
