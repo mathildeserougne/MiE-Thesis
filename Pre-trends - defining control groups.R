@@ -388,48 +388,48 @@ perform_chow_test(baci_indian_exposed_filtered, "European Union", "Rep. of Korea
 
 ## second version: tests if parallel BEFORE the treatment
 
-# Fonction pour effectuer le test de Chow entre deux régions pour une période spécifique
+# chow test between 2 regions over the right period
 perform_chow_test <- function(data, region1, region2, start_year, end_year) {
-  # Filtrer les données pour la période spécifique
+  # filter data for right period
   data_filtered <- data %>%
     filter(year >= start_year & year <= end_year) %>%
     filter(region %in% c(region1, region2))
   
-  # Régression linéaire pour la première région
+  # lm for region1
   lm_region1 <- lm(total_value ~ year, data = filter(data_filtered, region == region1))
   summary_lm_region1 <- tidy(lm_region1)
   
-  # Régression linéaire pour la deuxième région
+  # lm for region2
   lm_region2 <- lm(total_value ~ year, data = filter(data_filtered, region == region2))
   summary_lm_region2 <- tidy(lm_region2)
   
-  # Afficher les résultats des régressions
+  # lm results
   print(paste("Regression for", region1))
   print(summary_lm_region1)
   print(paste("Regression for", region2))
   print(summary_lm_region2)
   
-  # Test de Chow pour comparer les pentes
+  # chow test
   combined_data <- data_filtered %>%
     mutate(region = ifelse(region == region1, region1, region2))
   
   lm_combined <- lm(total_value ~ year * region, data = combined_data)
   summary_lm_combined <- summary(lm_combined)
   
-  # Afficher le résultat du modèle combiné
+  # combined model output
   print("Combined Model with Interaction")
   print(summary_lm_combined)
 }
 
-# Tester l'hypothèse de tendances parallèles entre l'UE et les USA pour la période 2013-2020
+# parallelism EU-USA 2013-2020?
 perform_chow_test(baci_indian_exposed_filtered, "European Union", "USA", 2013, 2020)
 # good for parallel trends!
 
-# Tester l'hypothèse de tendances parallèles entre l'UE et la Chine pour la période 2013-2020
+# parallelism EU-China 2013-2020?
 perform_chow_test(baci_indian_exposed_filtered, "European Union", "China", 2013, 2020)
 # good for parallel trends on that period!
 
-# Tester l'hypothèse de tendances parallèles entre l'UE et la Corée pour la période 2013-2020
+# parallelism EU-Korea 2013-2020?
 perform_chow_test(baci_indian_exposed_filtered, "European Union", "Rep. of Korea", 2013, 2020)
 # works fine
 
@@ -439,25 +439,196 @@ perform_chow_test(baci_indian_exposed_filtered, "European Union", "Rep. of Korea
 
 
 
-### SYNTHETIC CONTROL ATTEMPT 1 
+### SYNTHETIC CONTROL ATTEMPT 1  ####
+## FAIL SKIP THE FOLLOWING BLOCKS UNTIL 'GOOD' 
 
 
 # so weight each country by its level of output, and average it to get the trend of the synthetic us x chine x korea
 
 
+# Créer la ligne synthétique avec la somme pondérée de value par année
+synthetic_exports <- baci_indian_exposed %>%
+  filter(importer_name %in% c("China", "USA", "Rep. of Korea")) %>%
+  group_by(year) %>%
+  summarise(
+    value = sum(value, na.rm = TRUE),
+    importer = 999,
+    importer_name = "synthetic",
+    .groups = "drop"
+  )
+
+# Ajouter à la base existante
+baci_indian_exposed <- bind_rows(baci_indian_exposed, synthetic_exports)
 
 
 
+# maintenant je vais comparer ça aux pays européens
+#voir si le contrôle artificiel contrôle bien
+
+# Créer un dataframe avec les trois groupes
+df_plot <- baci_indian_exposed %>%
+  mutate(group = case_when(
+    importer == 999 ~ "Synthetic",
+    importer_name %in% c("China", "USA", "Rep. of Korea") ~ importer_name,
+    importer %in% eu_members ~ "European Union",
+    TRUE ~ NA_character_
+  )) %>%
+  filter(!is.na(group)) %>%
+  group_by(year, group) %>%
+  summarise(exports = sum(value, na.rm = TRUE), .groups = "drop")
+
+# Graphique
+ggplot(df_plot, aes(x = year, y = exports, color = group)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Évolution des exportations indiennes (2013–2023)",
+    x = "Année",
+    y = "Exportations (valeur totale)",
+    color = "Destination"
+  ) +
+  theme_minimal()
 
 
 
+## test statistique !
+
+
+# Fonction test de tendances parallèles entre EU et le pays synthétique
+perform_parallel_trends_test <- function(data, start_year, end_year) {
+  # Préparer les données
+  eu_members <- c(
+    276, 40, 56, 100, 196, 191, 208, 724, 233, 246,
+    251, 300, 348, 372, 380, 428, 440, 442, 470, 528,
+    616, 620, 203, 642, 703, 705, 752
+  )
+  
+  data_test <- data %>%
+    filter(year >= start_year, year <= end_year) %>%
+    mutate(region = case_when(
+      importer == 999 ~ "Synthetic",
+      importer %in% eu_members ~ "European Union",
+      TRUE ~ NA_character_
+    )) %>%
+    filter(!is.na(region)) %>%
+    group_by(year, region) %>%
+    summarise(total_value = sum(value, na.rm = TRUE), .groups = "drop")
+  
+  # Régressions séparées
+  lm_eu <- lm(total_value ~ year, data = filter(data_test, region == "European Union"))
+  lm_syn <- lm(total_value ~ year, data = filter(data_test, region == "Synthetic"))
+  
+  cat("\n Régression EU :\n")
+  print(tidy(lm_eu))
+  
+  cat("\n Régression Synthetic :\n")
+  print(tidy(lm_syn))
+  
+  # Modèle avec interaction pour test de tendance parallèle
+  lm_interact <- lm(total_value ~ year * region, data = data_test)
+  
+  cat("\n Modèle combiné avec interaction :\n")
+  print(summary(lm_interact))
+  
+  cat("\n Interprétation : si l’interaction 'year:regionSynthetic' n’est pas significative,\n")
+  cat("→ alors les tendances sont parallèles.\n")
+}
+
+# Test de tendance parallèle EU vs Synthetic entre 2013 et 2020
+perform_parallel_trends_test(baci_indian_exposed, start_year = 2013, end_year = 2020)
 
 
 
+####
 
 
 
+## SYNTHETIC COUNTRY ATTEMPT 2 ##
+# GOOD 
 
 
+
+# data for our three countries of interest (China, USA, Korea)
+group_3 <- baci_indian_exposed %>%
+  filter(importer_name %in% c("China", "USA", "Rep. of Korea")) %>%
+  group_by(year, importer_name) %>%
+  summarise(value = sum(value, na.rm = TRUE), .groups = "drop") %>%
+  group_by(year) %>%
+  summarise(exports = mean(value), group = "Synthetic (mean of 3)", .groups = "drop")
+
+# data for eu and three countries
+group_other <- baci_indian_exposed %>%
+  mutate(group = case_when(
+    importer_name %in% c("China", "USA", "Rep. of Korea") ~ importer_name,
+    importer %in% eu_members ~ "European Union",
+    TRUE ~ NA_character_
+  )) %>%
+  filter(!is.na(group)) %>%
+  group_by(year, group) %>%
+  summarise(exports = sum(value, na.rm = TRUE), .groups = "drop")
+
+# combine the two
+df_plot <- bind_rows(group_3, group_other)
+
+# plot
+library(ggplot2)
+ggplot(df_plot, aes(x = year, y = exports, color = group)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Exports of exposed products from India",
+    x = "Year",
+    y = "Exported value",
+    color = "Destination"
+  ) +
+  theme_minimal()
+
+
+
+# stat tests
+
+perform_chow_test_synthetic_vs_eu <- function(data, start_year, end_year) {
+  # eu country codes
+  eu_members <- c(
+    276, 40, 56, 100, 196, 191, 208, 724, 233, 246,
+    251, 300, 348, 372, 380, 428, 440, 442, 470, 528,
+    616, 620, 203, 642, 703, 705, 752
+  )
+  
+  # sum over eu countries
+  eu_data <- data %>%
+    filter(importer %in% eu_members, year >= start_year, year <= end_year) %>%
+    group_by(year) %>%
+    summarise(total_value = sum(value, na.rm = TRUE), region = "European Union", .groups = "drop")
+  
+  # synthetic country (mean of the three)
+  syn_data <- data %>%
+    filter(importer_name %in% c("China", "USA", "Rep. of Korea"), year >= start_year, year <= end_year) %>%
+    group_by(year, importer_name) %>%
+    summarise(value = sum(value, na.rm = TRUE), .groups = "drop") %>%
+    group_by(year) %>%
+    summarise(total_value = mean(value), region = "Synthetic", .groups = "drop")
+  
+  # merge
+  data_filtered <- bind_rows(eu_data, syn_data)
+  
+  # linear models of the regions
+  lm_region1 <- lm(total_value ~ year, data = filter(data_filtered, region == "European Union"))
+  lm_region2 <- lm(total_value ~ year, data = filter(data_filtered, region == "Synthetic"))
+  
+  print("Regression for European Union")
+  print(tidy(lm_region1))
+  
+  print("Regression for Synthetic")
+  print(tidy(lm_region2))
+  
+  # combined model with interaction
+  lm_combined <- lm(total_value ~ year * region, data = data_filtered)
+  print("Combined Model with Interaction")
+  print(summary(lm_combined))
+}
+
+
+
+perform_chow_test_synthetic_vs_eu(baci_indian_exposed, 2013, 2020)
+# SLAYYYYYY
 
 
