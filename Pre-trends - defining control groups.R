@@ -264,6 +264,185 @@ summary(lm_combined_comparison)
 
 
 # NOT PARALLEL.
+# means that we have to find a more accurate control: either a country or a synthetic one.
+
+
+
+
+## Finding a better control to Europe than "rest-of-the-world"
+
+# Listing the main importers of Indian-exposed-products: 
+
+# exposed flows from india
+baci_indian_exposed <- baci_indian_pov %>%
+  filter(str_detect(as.character(product), paste(paste0("^", hs_prefixes), collapse = "|")))
+# sum of the values for each importer
+top_importers <- baci_indian_exposed %>%
+  group_by(importer, importer_name) %>%  # Assurez-vous que importer_name est dans vos données
+  summarise(total_import_value = sum(value, na.rm = TRUE)) %>%
+  arrange(desc(total_import_value))
+# display main importers
+print(top_importers)
+
+
+
+# top ones: US, China, Korea, Brazil, Türkiye
+
+# Let's plot the trends for thos top countries and compare it to Europe.
+# step of VISUALISATION
+
+# Interest countries.
+countries_of_interest <- c("USA", "China", "Rep. of Korea", "Brazil", "TÃ¼rkiye")
+
+# Filter data for exposed products.
+baci_indian_exposed <- baci_indian_pov %>%
+  filter(str_detect(as.character(product), paste(paste0("^", hs_prefixes), collapse = "|")))
+
+# Filter data for countries of interest and the EU.
+baci_indian_exposed_filtered <- baci_indian_exposed %>%
+  filter(importer_name %in% c(countries_of_interest, "European Union") | importer %in% eu_members)
+
+# Sum of export values for each year and each region/country of interest.
+baci_indian_exposed_filtered <- baci_indian_exposed_filtered %>%
+  mutate(region = ifelse(importer %in% eu_members, "European Union", importer_name)) %>%
+  group_by(year, region) %>%
+  summarise(total_value = sum(value, na.rm = TRUE), .groups = "drop")
+
+# Plot
+ggplot(baci_indian_exposed_filtered, aes(x = year, y = total_value, color = region)) +
+  geom_line(linewidth = 0.5) +
+  labs(title = "Evolution of Exposed Products Exports from India",
+       x = "Year",
+       y = "Export Volume",
+       color = "Region") +
+  scale_color_manual(
+    values = c("European Union" = "blue",
+               "USA" = "red",
+               "China" = "green",
+               "Rep. of Korea" = "purple",
+               "Brazil" = "orange",
+               "TÃ¼rkiye" = "brown"),
+    #labels = c("European Union", "USA", "China", "South Korea", "Brazil", "Türkiye")
+  ) +
+  scale_x_continuous(breaks = seq(2013, 2023, by = 1)) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal()
+
+
+# Visual candidates: best fits would seem to be US and China and Korea.
+# Next step are then the statistical tests: how significant are the differences? Can we keep a parallel trends hypothesis?
+
+
+## first version: not correct because estimates on 2013-2023 (so tests parallelism before and after the treatment)
+
+# We just create a function to do the Chow test between two regions
+perform_chow_test <- function(data, region1, region2) {
+  # filter data for the regions
+  data_filtered <- data %>%
+    filter(region %in% c(region1, region2))
+  
+  # lm for region1
+  lm_region1 <- lm(total_value ~ year, data = filter(data_filtered, region == region1))
+  summary_lm_region1 <- tidy(lm_region1)
+  
+  # lm for region2
+  lm_region2 <- lm(total_value ~ year, data = filter(data_filtered, region == region2))
+  summary_lm_region2 <- tidy(lm_region2)
+  
+  # display regression results
+  print(paste("Regression for", region1))
+  print(summary_lm_region1)
+  print(paste("Regression for", region2))
+  print(summary_lm_region2)
+  
+  # chow test to compare significant or not differences
+  combined_data <- data_filtered %>%
+    mutate(region = ifelse(region == region1, region1, region2))
+  
+  lm_combined <- lm(total_value ~ year * region, data = combined_data)
+  summary_lm_combined <- tidy(lm_combined)
+  
+  # print combined model with interaction
+  print("Combined Model with Interaction")
+  print(summary(lm_combined))
+}
+
+
+# PARALLEL TRENDS BETWEEN EU AND USA?
+perform_chow_test(baci_indian_exposed_filtered, "European Union", "USA")
+# The export trends to EU and USA are not signif. different
+# Non significant interaction term: good signal for parallel trends.
+
+
+# PARALLEL TRENDS BETWEEN EU AND CHINA?
+perform_chow_test(baci_indian_exposed_filtered, "European Union", "China")
+# Significant difference
+# Suggests non-parallel trends
+
+
+# PARALLEL TRENDS BETWEEN EU AND KOREA?
+perform_chow_test(baci_indian_exposed_filtered, "European Union", "Rep. of Korea")
+# not parallel !
+
+
+
+## second version: tests if parallel BEFORE the treatment
+
+# Fonction pour effectuer le test de Chow entre deux régions pour une période spécifique
+perform_chow_test <- function(data, region1, region2, start_year, end_year) {
+  # Filtrer les données pour la période spécifique
+  data_filtered <- data %>%
+    filter(year >= start_year & year <= end_year) %>%
+    filter(region %in% c(region1, region2))
+  
+  # Régression linéaire pour la première région
+  lm_region1 <- lm(total_value ~ year, data = filter(data_filtered, region == region1))
+  summary_lm_region1 <- tidy(lm_region1)
+  
+  # Régression linéaire pour la deuxième région
+  lm_region2 <- lm(total_value ~ year, data = filter(data_filtered, region == region2))
+  summary_lm_region2 <- tidy(lm_region2)
+  
+  # Afficher les résultats des régressions
+  print(paste("Regression for", region1))
+  print(summary_lm_region1)
+  print(paste("Regression for", region2))
+  print(summary_lm_region2)
+  
+  # Test de Chow pour comparer les pentes
+  combined_data <- data_filtered %>%
+    mutate(region = ifelse(region == region1, region1, region2))
+  
+  lm_combined <- lm(total_value ~ year * region, data = combined_data)
+  summary_lm_combined <- summary(lm_combined)
+  
+  # Afficher le résultat du modèle combiné
+  print("Combined Model with Interaction")
+  print(summary_lm_combined)
+}
+
+# Tester l'hypothèse de tendances parallèles entre l'UE et les USA pour la période 2013-2020
+perform_chow_test(baci_indian_exposed_filtered, "European Union", "USA", 2013, 2020)
+# good for parallel trends!
+
+# Tester l'hypothèse de tendances parallèles entre l'UE et la Chine pour la période 2013-2020
+perform_chow_test(baci_indian_exposed_filtered, "European Union", "China", 2013, 2020)
+# good for parallel trends on that period!
+
+# Tester l'hypothèse de tendances parallèles entre l'UE et la Corée pour la période 2013-2020
+perform_chow_test(baci_indian_exposed_filtered, "European Union", "Rep. of Korea", 2013, 2020)
+# works fine
+
+
+## maybe i could build a synthetic country out of the three?
+
+
+
+
+### SYNTHETIC CONTROL ATTEMPT 1 
+
+
+# so weight each country by its level of output, and average it to get the trend of the synthetic us x chine x korea
 
 
 
