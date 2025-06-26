@@ -9,7 +9,7 @@
 ## PACKAGES
 
 # Uncomment packages installation if necessary
-#install.packages(c("dplyr","readr","stringr","ggplot2", "scales"))
+# install.packages(c("dplyr","readr","stringr","ggplot2", "scales"))
 # install.packages("broom")
 # Libraries
 library(dplyr)
@@ -630,5 +630,129 @@ perform_chow_test_synthetic_vs_eu <- function(data, start_year, end_year) {
 
 perform_chow_test_synthetic_vs_eu(baci_indian_exposed, 2013, 2020)
 # SLAYYYYYY
+
+
+
+
+
+
+###############################################################################
+#### ANOTHER REPRESENTATION OF PARALLEL TRENDS: NORMALISED ONE (2013=100)
+###############################################################################
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(stringr)
+
+
+### exposed and non-exposed products from India to EU, base 100 is 2013 ##########
+
+## A) Representing the trends with base 100
+
+# flows of exposed products from INDIA to EUROPE
+baci_indian_exposed_eurozone <- baci_indian_pov_eurozone %>%
+  filter(str_detect(as.character(product), paste(paste0("^", hs_prefixes), collapse = "|")))
+
+# total value of exposed flow to europe each year
+total_value_exposed_by_year_eurozone <- baci_indian_exposed_eurozone %>%
+  group_by(year) %>%
+  summarise(total_exposed_value = sum(value, na.rm = TRUE))
+
+# total flows not exposed from india to europe
+baci_indian_nonexposed_eurozone <- baci_indian_pov_eurozone %>%
+  filter(!str_detect(as.character(product), paste(paste0("^", hs_prefixes), collapse = "|")))
+
+total_value_nonexposed_by_year_eurozone <- baci_indian_nonexposed_eurozone %>%
+  group_by(year) %>%
+  summarise(total_nonexposed_value = sum(value, na.rm = TRUE))
+
+# merge data
+plot_data_eurozone <- full_join(total_value_exposed_by_year_eurozone, total_value_nonexposed_by_year_eurozone, by = "year")
+
+# NORMALISATION BASE 100 (année 2013)
+base_year <- 2013
+base_exposed <- plot_data_eurozone %>%
+  filter(year == base_year) %>%
+  pull(total_exposed_value)
+
+base_nonexposed <- plot_data_eurozone %>%
+  filter(year == base_year) %>%
+  pull(total_nonexposed_value)
+
+plot_data_eurozone_norm <- plot_data_eurozone %>%
+  mutate(
+    exposed_index = (total_exposed_value / base_exposed) * 100,
+    nonexposed_index = (total_nonexposed_value / base_nonexposed) * 100
+  ) %>%
+  select(year, exposed_index, nonexposed_index) %>%
+  pivot_longer(cols = c(exposed_index, nonexposed_index),
+               names_to = "product_type", values_to = "index_value")
+
+# plot normalized trends
+ggplot(plot_data_eurozone_norm, aes(x = factor(year), y = index_value, color = product_type, group = product_type)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  labs(title = "Normalized Export Index to Europe (Base 2013 = 100)",
+       x = "Year",
+       y = "Index (Base 2013 = 100)",
+       color = "Product Type") +
+  scale_color_manual(values = c("exposed_index" = "orange", "nonexposed_index" = "pink"),
+                     labels = c("Exposed Products", "Non-Exposed Products")) +
+  theme_minimal()
+
+
+
+## B) Re-doing the test for parallelism
+
+library(broom)
+
+# Filter normalised data 2013 et 2019
+plot_data_eurozone_norm_2013_2019 <- plot_data_eurozone_norm %>%
+  filter(year >= 2013, year <= 2019)
+
+# regression for each group of products
+lm_exposed_norm <- lm(index_value ~ year, data = filter(plot_data_eurozone_norm_2013_2019, product_type == "exposed_index"))
+lm_nonexposed_norm <- lm(index_value ~ year, data = filter(plot_data_eurozone_norm_2013_2019, product_type == "nonexposed_index"))
+
+# model summary
+summary_lm_exposed_norm <- tidy(lm_exposed_norm)
+summary_lm_nonexposed_norm <- tidy(lm_nonexposed_norm)
+
+# print results
+print("Regression on exposed products (normalized, 2013-2019):")
+print(summary_lm_exposed_norm)
+
+print("Regression on non-exposed products (normalized, 2013-2019):")
+print(summary_lm_nonexposed_norm)
+
+# combined model with interaction for trend similarity
+combined_norm_data <- plot_data_eurozone_norm_2013_2019 %>%
+  mutate(product_type = ifelse(product_type == "exposed_index", "Exposed", "Non-Exposed"))
+
+lm_combined_norm <- lm(index_value ~ year * product_type, data = combined_norm_data)
+summary_lm_combined_norm <- tidy(lm_combined_norm)
+
+# combined model summary
+print("Combined regression with interaction (test de tendance parallèle):")
+print(summary(lm_combined_norm))
+
+
+
+## 3) interpretation ?
+
+# over the period, significant growth of exposed exports. 
+# not significant for the non-exposed products.
+# the combined model suggests that we cannot exclude the parallel trends hypothesis.
+
+
+
+### exposed products from India to different regions of the world, base 100 is 2013
+
+
+
+
+
 
 
