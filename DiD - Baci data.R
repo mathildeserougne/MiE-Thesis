@@ -6,8 +6,8 @@
 ## PACKAGES ####################################################################
 
 # Uncomment packages installation if necessary
-# install.packages(c("dplyr","readr","stringr","ggplot2", "scales"))
-# install.packages("broom")
+install.packages(c("dplyr","readr","stringr","ggplot2", "scales"))
+install.packages("broom")
 # Libraries
 library(dplyr)
 library(readr)
@@ -224,9 +224,52 @@ ggplot(plot_data_did, aes(x = year, y = index_value, color = product_type, group
 
 
 
+# FIXED EFFECTS DID #############
+
+## Now, we can try to do a more precise regression, including fixed effects.
+
+## not including 2020?
+# Fixed effects for year and products
+install.packages("fixest")
+library(fixest)
+
+plot_data_did <- plot_data_did %>%
+  mutate(
+    year = as.factor(year),
+    product_type = as.factor(product_type)
+  )
+# regression with the fixed effects
+did_fe <- feols(index_value ~ did | year + product_type, data = plot_data_did)
+summary(did_fe)
+# very significant, stronger growth for exposed products...
 
 
+## including 2020?
+plot_data_did_fe <- plot_data_eurozone_norm %>%
+  filter(year >= 2013, year <= 2023) %>%  # On garde tout, y compris 2020
+  mutate(
+    treated = ifelse(product_type == "exposed_index", 1, 0),
+    post = ifelse(year >= 2021, 1, 0),
+    did = treated * post
+  )
 
+
+library(fixest)
+
+did_fe <- feols(index_value ~ did | year + product_type, 
+                data = plot_data_did_fe, 
+                cluster = ~year)
+summary(did_fe)
+# less strong effect but just as significant.
+# the result is robust despite the shock that happened with covid.
+
+
+# but this is with a not very convincing control group.
+
+
+## changing the control group to get something actually meaningful.
+
+unique(plot_data_eurozone_norm$product_type)
 
 
 

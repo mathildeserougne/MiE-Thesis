@@ -748,11 +748,155 @@ print(summary(lm_combined_norm))
 
 
 
-### exposed products from India to different regions of the world, base 100 is 2013
+
+## D) Looking for better controls (normalised)
+
+## Parallel trends for Indian exports to the EU: finding a more accurate control.
+# we find that the trends do not seem that parallel between exposed and non exposed.
+# let's do better.
+
+# hs groups to compare
+baci_indian_pov <- baci_indian_pov %>%
+  mutate(hs_2 = str_sub(as.character(product), 1, 2))
+
+baci_indian_eu <- baci_indian_pov %>%
+  filter(importer %in% eu_members)
+
+# Agrégation par groupe hs_2 et année
+hs_yearly <- baci_indian_eu %>%
+  group_by(hs_2, year) %>%
+  summarise(total_value = sum(value, na.rm = TRUE), .groups = "drop")
+
+# Normalisation (base 100 en 2013) pour chaque groupe hs_2
+hs_index <- hs_yearly %>%
+  group_by(hs_2) %>%
+  mutate(
+    base_value = total_value[year == 2013],
+    index_value = (total_value / base_value) * 100
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(index_value))
+
+
+# Plot de l'évolution normalisée pour chaque groupe HS
+ggplot(hs_index, aes(x = factor(year), y = index_value, color = hs_2, group = hs_2)) +
+  geom_line(size = 1.2, alpha = 0.8) +
+  labs(
+    title = "Évolution normalisée des exportations indiennes vers l'UE par groupe HS (Base 2013 = 100)",
+    x = "Année",
+    y = "Indice (Base 2013 = 100)",
+    color = "Groupe HS"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
 
 
 
+# this obviously does not work.
+# let us instead work with quadratic distance...
+
+library(dplyr)
+
+# 1) Identifier les groupes HS exposés (CBAM) : 
+hs_exposed <- hs_prefixes
+
+# Convertir hs_prefixes en vecteur character pour comparer facilement
+hs_exposed_char <- as.character(hs_exposed)
+
+# 2) Calculer la trajectoire moyenne exposée (moyenne des groupes exposés)
+exposed_trends <- hs_index %>%
+  filter(hs_2 %in% hs_exposed_char, year >= 2013, year <= 2018) %>%
+  group_by(year) %>%
+  summarise(mean_index = mean(index_value, na.rm = TRUE)) %>%
+  arrange(year)
+
+# 3) Fonction pour calculer la distance quadratique moyenne avec la trajectoire exposée
+calculate_mse <- function(df_group, exposed_df) {
+  merged <- merge(df_group, exposed_df, by = "year", all = FALSE)
+  mse <- mean((merged$index_value - merged$mean_index)^2, na.rm = TRUE)
+  return(mse)
+}
+
+# 4) Calculer le MSE pour chaque groupe HS (non exposé)
+hs_distances <- hs_index %>%
+  filter(year >= 2013, year <= 2018) %>%
+  group_by(hs_2) %>%
+  summarise(mse = calculate_mse(cur_data(), exposed_trends)) %>%
+  ungroup()
+
+# 5) Retirer les groupes exposés de la liste (car ce sont les traités)
+hs_distances_controls <- hs_distances %>%
+  filter(!hs_2 %in% hs_exposed_char) %>%
+  arrange(mse)
+
+# 6) Afficher les meilleurs contrôles (groupes HS avec tendance la plus proche)
+print("Groupes HS avec tendances les plus proches des exposés (potentiels contrôles) :")
+print(hs_distances_controls)
 
 
+# result: 
+#[1] "Groupes HS avec tendances les plus proches des exposés (potentiels contrôles) :"
+#> print(hs_distances_controls)
+## A tibble: 91 × 2
+#hs_2    mse
+#<chr> <dbl>
+#  1 14     78.1
+#2 11    215. 
+#3 56    309. 
+#4 91    339. 
+#5 84    442. 
+#6 90    444. 
+#7 92    532. 
+#8 95    607. 
+#9 19    780. 
+#10 58    832. 
+# ℹ 81 more rows
+# ℹ Use `print(n = ...)` to see more rows
 
+# visualisation
+
+top_controls <- hs_distances_controls %>% slice_head(n = 10)
+
+print(top_controls)
+
+# Optionnel : visualiser leur tendance normalisée
+hs_index %>%
+  filter(hs_2 %in% top_controls$hs_2, year >= 2013, year <= 2018) %>%
+  ggplot(aes(x = year, y = index_value, color = hs_2, group = hs_2)) +
+  geom_line(size = 1.2) +
+  geom_point() +
+  labs(title = "Top 10 groupes HS non exposés avec tendances proches des exposés",
+       x = "Année",
+       y = "Indice (base 2013 = 100)") +
+  theme_minimal()
+
+# one with the cbam exposed to compare...
+# 1) Tendance agrégée exposés (2013-2018)
+exposed_trends_subset <- hs_index %>%
+  filter(hs_2 %in% hs_exposed_char, year >= 2013, year <= 2018) %>%
+  group_by(year) %>%
+  summarise(index_value = mean(index_value, na.rm = TRUE)) %>%
+  mutate(hs_2 = "Exposés Agrégés")
+
+# 2) Tendances groupes contrôle sélectionnés (top k)
+k <- 5
+selected_controls <- hs_distances_controls %>% slice_head(n = k) %>% pull(hs_2)
+
+controls_trends <- hs_index %>%
+  filter(hs_2 %in% selected_controls, year >= 2013, year <= 2018)
+
+# 3) Fusionner exposés et contrôles
+plot_data <- bind_rows(exposed_trends_subset, controls_trends)
+
+# 4) Plot
+ggplot(plot_data, aes(x = year, y = index_value, color = hs_2, group = hs_2)) +
+  geom_line(size = 1.2) +
+  geom_point() +
+  labs(
+    title = paste0("Tendances normalisées : Exposés agrégés vs top ", k, " contrôles"),
+    x = "Année",
+    y = "Indice (base 2013 = 100)",
+    color = "Groupe HS"
+  ) +
+  theme_minimal()
 
