@@ -792,6 +792,7 @@ ggplot(hs_index, aes(x = factor(year), y = index_value, color = hs_2, group = hs
 
 
 
+
 # this obviously does not work.
 # let us instead work with quadratic distance...
 
@@ -805,7 +806,7 @@ hs_exposed_char <- as.character(hs_exposed)
 
 # 2) Calculer la trajectoire moyenne exposée (moyenne des groupes exposés)
 exposed_trends <- hs_index %>%
-  filter(hs_2 %in% hs_exposed_char, year >= 2013, year <= 2018) %>%
+  filter(hs_2 %in% hs_exposed_char, year >= 2013, year <= 2020) %>%
   group_by(year) %>%
   summarise(mean_index = mean(index_value, na.rm = TRUE)) %>%
   arrange(year)
@@ -819,7 +820,7 @@ calculate_mse <- function(df_group, exposed_df) {
 
 # 4) Calculer le MSE pour chaque groupe HS (non exposé)
 hs_distances <- hs_index %>%
-  filter(year >= 2013, year <= 2018) %>%
+  filter(year >= 2013, year <= 2020) %>%
   group_by(hs_2) %>%
   summarise(mse = calculate_mse(cur_data(), exposed_trends)) %>%
   ungroup()
@@ -834,24 +835,7 @@ print("Groupes HS avec tendances les plus proches des exposés (potentiels contr
 print(hs_distances_controls)
 
 
-# result: 
-#[1] "Groupes HS avec tendances les plus proches des exposés (potentiels contrôles) :"
-#> print(hs_distances_controls)
-## A tibble: 91 × 2
-#hs_2    mse
-#<chr> <dbl>
-#  1 14     78.1
-#2 11    215. 
-#3 56    309. 
-#4 91    339. 
-#5 84    442. 
-#6 90    444. 
-#7 92    532. 
-#8 95    607. 
-#9 19    780. 
-#10 58    832. 
-# ℹ 81 more rows
-# ℹ Use `print(n = ...)` to see more rows
+
 
 # visualisation
 
@@ -861,7 +845,7 @@ print(top_controls)
 
 # Optionnel : visualiser leur tendance normalisée
 hs_index %>%
-  filter(hs_2 %in% top_controls$hs_2, year >= 2013, year <= 2018) %>%
+  filter(hs_2 %in% top_controls$hs_2, year >= 2013, year <= 2020) %>%
   ggplot(aes(x = year, y = index_value, color = hs_2, group = hs_2)) +
   geom_line(size = 1.2) +
   geom_point() +
@@ -870,20 +854,22 @@ hs_index %>%
        y = "Indice (base 2013 = 100)") +
   theme_minimal()
 
+
+
 # one with the cbam exposed to compare...
 # 1) Tendance agrégée exposés (2013-2018)
 exposed_trends_subset <- hs_index %>%
-  filter(hs_2 %in% hs_exposed_char, year >= 2013, year <= 2018) %>%
+  filter(hs_2 %in% hs_exposed_char, year >= 2013, year <= 2020) %>%
   group_by(year) %>%
   summarise(index_value = mean(index_value, na.rm = TRUE)) %>%
-  mutate(hs_2 = "Exposés Agrégés")
+  mutate(hs_2 = "Agg. exposed")
 
 # 2) Tendances groupes contrôle sélectionnés (top k)
 k <- 5
 selected_controls <- hs_distances_controls %>% slice_head(n = k) %>% pull(hs_2)
 
 controls_trends <- hs_index %>%
-  filter(hs_2 %in% selected_controls, year >= 2013, year <= 2018)
+  filter(hs_2 %in% selected_controls, year >= 2013, year <= 2020)
 
 # 3) Fusionner exposés et contrôles
 plot_data <- bind_rows(exposed_trends_subset, controls_trends)
@@ -893,10 +879,47 @@ ggplot(plot_data, aes(x = year, y = index_value, color = hs_2, group = hs_2)) +
   geom_line(size = 1.2) +
   geom_point() +
   labs(
-    title = paste0("Tendances normalisées : Exposés agrégés vs top ", k, " contrôles"),
-    x = "Année",
-    y = "Indice (base 2013 = 100)",
-    color = "Groupe HS"
+    title = paste0("Normalised trends : Sum of exposed vs top ", k, " controls"),
+    x = "Year",
+    y = "Index (base 2013 = 100)",
+    color = "HS group"
   ) +
   theme_minimal()
+
+
+# so the best ones appear to be 19, 56, 84, 90, 91 when looking at trajectories 2013-2019
+# and the best ones appear to be 19, 84, 90, 91, 92 for 2013-2020
+
+
+
+## let us test for the PARALLELISM of the trends  ##
+
+# for visual plot and chow test, we aggregate. we won't for the did, though.
+
+# (1) group index
+hs_index_agg <- hs_index %>%
+  filter(hs_2 %in% c(hs_exposed_char, selected_controls), year >= 2013, year <= 2020) %>%
+  mutate(group = if_else(hs_2 %in% hs_exposed_char, "Treated", "Control")) %>%
+  group_by(group, year) %>%
+  summarise(index_value = mean(index_value, na.rm = TRUE), .groups = "drop")
+
+# (2) comparison plot
+library(ggplot2)
+ggplot(hs_index_agg, aes(x = year, y = index_value, color = group)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  labs(
+    title = "Aggregate trend : exposed vs controls",
+    x = "Year", y = "Index (base 2013 = 100)", color = "Group"
+  ) +
+  theme_minimal()
+
+# (3) Chow : tests interaction year group
+hs_index_agg %>%
+  filter(year <= 2020) %>%
+  lm(index_value ~ year * group, data = .) %>%
+  summary()
+
+# No significant difference of trend.
+
 

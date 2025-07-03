@@ -224,7 +224,7 @@ ggplot(plot_data_did, aes(x = year, y = index_value, color = product_type, group
 
 
 
-# FIXED EFFECTS DID #############
+# FIXED EFFECTS DID #############################################################
 
 ## Now, we can try to do a more precise regression, including fixed effects.
 
@@ -267,9 +267,247 @@ summary(did_fe)
 # but this is with a not very convincing control group.
 
 
+
+
+
 ## changing the control group to get something actually meaningful.
 
-unique(plot_data_eurozone_norm$product_type)
+# Ok so we have the selected_controls list of HS codes: top 5 controls.
+# We aggregated them for the chow test and it confirmed the relevance.
+# Now the the DiD we do not aggregate them, and we put the fixed effects.
+
+
+# version 1
+# wrong specification of the treatment starting in 2021
+
+hs_index_did <- hs_index %>%
+  filter(hs_2 %in% c(hs_exposed_char, selected_controls)) %>%
+  mutate(
+    treated = if_else(hs_2 %in% hs_exposed_char, 1, 0),
+    post = if_else(year >= 2021, 1, 0),
+    treated_post = treated * post
+  )
+
+did_model <- feols(index_value ~ treated_post | hs_2 + year, 
+                   data = hs_index_did, 
+                   cluster = "hs_2")
+summary(did_model)
+
+
+did_model_dynamic <- feols(index_value ~ i(year, treated, ref = 2020) | hs_2 + year,
+                           data = hs_index_did,
+                           cluster = "hs_2")
+iplot(did_model_dynamic, main = "Effet du traitement par année (ref: 2020)")
+
+
+
+
+
+## autre spécification
+## fat results... but not significant unfortunately...
+
+# prepare variables
+hs_index_did <- hs_index %>%
+  filter(hs_2 %in% c(hs_exposed_char, selected_controls)) %>%
+  mutate(
+    treated = if_else(hs_2 %in% hs_exposed_char, 1, 0),
+    post = if_else(year >= 2021, 1, 0),
+    treated_post = treated * post,
+    year_factor = as.factor(year)
+  )
+# dynamic estimation with fixed effects on year and product
+library(fixest)
+
+did_model_dynamic <- feols(
+  index_value ~ i(year_factor, treated, ref = "2020") | hs_2 + year_factor,
+  data = hs_index_did,
+  cluster = ~hs_2
+)
+# dynamic graph of effects
+iplot(did_model_dynamic, 
+      main = "Effet dynamique du traitement par année (référence 2020)",
+      xlab = "Année", 
+      ylab = "Effet estimé (DiD)",
+      ci_level = 0.95)
+# Display the summary of the model
+summary(did_model_dynamic)
+
+
+
+
+# post 2021 global effect (not significant lol)
+did_model_simple <- feols(
+  index_value ~ treated_post | hs_2 + year_factor,
+  data = hs_index_did,
+  cluster = ~hs_2
+)
+summary(did_model_simple)
+
+
+
+
+## trying yet another specification: loop for each HS code in the HS exposed
+
+## ATTEMPT LOOP 1
+
+library(fixest)
+library(dplyr)
+
+# Assuming hs_exposed_char is a vector of HS codes that are exposed to the treatment
+# and hs_index is your dataset
+
+# Loop over each HS code in the list of exposed products
+for (hs_code in hs_exposed_char) {
+  # Filter the dataset for the current HS code and the selected controls
+  hs_index_did <- hs_index %>%
+    filter(hs_2 %in% c(hs_code, selected_controls)) %>%
+    mutate(
+      treated = if_else(hs_2 == hs_code, 1, 0),
+      post = if_else(year >= 2021, 1, 0),
+      treated_post = treated * post,
+      year_factor = as.factor(year)
+    )
+  
+  # Print the filtered dataset to check if it is correct
+  cat("Filtered dataset for HS code:", hs_code, "\n")
+  print(head(hs_index_did))
+  
+  # Estimate the dynamic DiD model for the current HS code
+  did_model_dynamic <- feols(
+    index_value ~ i(year_factor, treated, ref = "2020") | hs_2 + year_factor,
+    data = hs_index_did,
+    cluster = ~hs_2
+  )
+  
+  # Print a message to confirm that the model has been estimated
+  cat("Model estimated for HS code:", hs_code, "\n")
+  
+  # Display the summary of the model for the current HS code
+  cat("Results for HS code:", hs_code, "\n")
+  summary_result <- summary(did_model_dynamic)
+  print(summary_result)
+  
+  cat("\n")
+}
+
+
+
+## ATTEMPT LOOP 2
+## WORKS AS INSPIRATION BUT NOT READY YET BECAUSE IN THAT CASE, WE NEED TO ADJUST THE CONTROLS !
+
+
+
+
+# ok not a loop, just 76
+
+# Préparation des données : on garde HS code 76 + contrôles
+hs_index_did_simple <- hs_index %>%
+  filter(hs_2 %in% c("76", selected_controls)) %>%
+  mutate(
+    treated = if_else(hs_2 == "76", 1, 0),
+    post = if_else(year >= 2021, 1, 0),
+    treated_post = treated * post,
+    year_factor = as.factor(year)
+  )
+
+# Estimation DiD simple avec effets fixes produit + année
+did_model_simple <- feols(
+  index_value ~ treated_post | hs_2 + year_factor,
+  data = hs_index_did_simple,
+  cluster = ~hs_2
+)
+
+# Résumé
+summary(did_model_simple)
+
+
+
+
+# Préparer les données pour HS code 76 et les contrôles sélectionnés
+hs_index_did <- hs_index %>%
+  filter(hs_2 %in% c("76", selected_controls)) %>%   # "76" traité + contrôles
+  mutate(
+    treated = if_else(hs_2 == "76", 1, 0),
+    year_factor = as.factor(year)
+  )
+
+# Estimation dynamique : interaction année x traitement, référence à 2020
+did_model_dynamic <- feols(
+  index_value ~ i(year_factor, treated, ref = "2020") | hs_2 + year_factor,
+  data = hs_index_did,
+  cluster = ~hs_2
+)
+
+# Résumé du modèle
+summary(did_model_dynamic)
+
+# Graphique dynamique des effets par année
+iplot(did_model_dynamic,
+      main = "Effet dynamique du traitement HS 76 par année (référence 2020)",
+      xlab = "Année",
+      ylab = "Effet estimé (DiD)",
+      ci_level = 0.95)
+
+
+# works great it seems
+
+
+
+# loop for the rest of the bundle
+# Liste des HS codes à analyser
+hs_codes_to_test <- c("25", "31", "28", "29")
+
+for(hs_code in hs_codes_to_test) {
+  
+  cat("=== Résultats pour HS code:", hs_code, "===\n\n")
+  
+  # Préparation des données : HS traité + contrôles
+  hs_index_did_simple <- hs_index %>%
+    filter(hs_2 %in% c(hs_code, selected_controls)) %>%
+    mutate(
+      treated = if_else(hs_2 == hs_code, 1, 0),
+      post = if_else(year >= 2021, 1, 0),
+      treated_post = treated * post,
+      year_factor = as.factor(year)
+    )
+  
+  # Estimation DiD simple avec effets fixes produit + année
+  did_model_simple <- feols(
+    index_value ~ treated_post | hs_2 + year_factor,
+    data = hs_index_did_simple,
+    cluster = ~hs_2
+  )
+  
+  print(summary(did_model_simple))
+  
+  # Préparation pour modèle dynamique
+  hs_index_did_dynamic <- hs_index %>%
+    filter(hs_2 %in% c(hs_code, selected_controls)) %>%
+    mutate(
+      treated = if_else(hs_2 == hs_code, 1, 0),
+      year_factor = as.factor(year)
+    )
+  
+  # Estimation dynamique : interaction année x traitement, référence 2020
+  did_model_dynamic <- feols(
+    index_value ~ i(year_factor, treated, ref = "2020") | hs_2 + year_factor,
+    data = hs_index_did_dynamic,
+    cluster = ~hs_2
+  )
+  
+  print(summary(did_model_dynamic))
+  
+  # Graphique dynamique (affiché pour chaque HS code)
+  iplot(did_model_dynamic,
+        main = paste("Effet dynamique du traitement HS", hs_code, "par année (référence 2020)"),
+        xlab = "Année",
+        ylab = "Effet estimé (DiD)",
+        ci_level = 0.95)
+  
+  cat("\n\n")
+}
+
+
 
 
 
