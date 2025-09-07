@@ -109,6 +109,41 @@ for (sector in exposed_groups) {
 }
 
 
+# comparing the annual growth rate with other sectors?
+# Secteurs de comparaison
+comparison_groups <- c("TEXTILES", "RUBBER AND PLASTICS PRODUCTS", "All India", "ELECTRICAL EQUIPMENT")
+
+for (sector in comparison_groups) {
+  # Croissance annuelle
+  growth_data <- calculate_growth(asi_all_years, sector)
+  avg_growth <- mean(growth_data$growth, na.rm = TRUE)
+  print(paste("Taux de croissance moyen pour", sector, ":", round(avg_growth * 100, 2), "%"))
+  
+  p1 <- plot_trends(growth_data, sector, "growth", "Growth Rate", "Annual Growth Rate")
+  print(p1)
+}
+
+
+### Graphique comparatif de la croissance annuelle ############################
+# Préparation des données pour le graphique comparatif
+comparison_data <- asi_all_years %>%
+  filter(Description %in% c(exposed_groups, comparison_groups)) %>%
+  arrange(Description, Year) %>%
+  group_by(Description) %>%
+  mutate(growth = (`Total Output` - lag(`Total Output`)) / lag(`Total Output`)) %>%
+  drop_na(growth) %>%
+  ungroup()
+
+# Tracer le graphique comparatif
+ggplot(comparison_data, aes(x = Year, y = growth, color = Description, group = Description)) +
+  geom_line(na.rm = TRUE) +
+  geom_point(na.rm = TRUE) +
+  labs(title = "Comparaison de la croissance annuelle des secteurs",
+       x = "Year",
+       y = "Growth Rate") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal()
+
 
 
 
