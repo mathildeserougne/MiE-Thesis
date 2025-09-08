@@ -80,7 +80,7 @@ calculate_wage_share <- function(data, sector) {
 # Fonction pour tracer les tendances (version optimisée pour les pourcentages)
 plot_trends <- function(data, sector, y_var, y_label, title) {
   ggplot(data, aes(x = Year, y = !!sym(y_var), group = 1)) +
-    geom_line(na.rm = TRUE, size = 0.7) +
+    geom_line(na.rm = TRUE, linewidth = 0.7) +  # Utilisation de linewidth au lieu de size
     geom_point(na.rm = TRUE, size = 2.5) +
     labs(
       title = paste(title, "-", sector),
@@ -89,15 +89,15 @@ plot_trends <- function(data, sector, y_var, y_label, title) {
     ) +
     theme_minimal(base_size = 12) +
     theme(
-      panel.grid.major = element_line(color = "gray90", linetype = "dashed"),  # Quadrillage principal
-      panel.grid.minor = element_line(color = "gray95", linetype = "dotted"),  # Quadrillage secondaire
-      panel.background = element_rect(fill = "white", color = "gray50")       # Fond propre
+      panel.grid.major = element_line(color = "gray90", linetype = "dashed"),
+      panel.grid.minor = element_line(color = "gray95", linetype = "dotted"),
+      panel.background = element_rect(fill = "white", color = "gray50")
     ) +
     scale_x_continuous(
-      breaks = unique(data$Year)  # Toutes les années affichées
+      breaks = unique(data$Year)
     ) +
     scale_y_continuous(
-      labels = scales::percent  # Affiche les valeurs en pourcentages (ex: 0.12 → 12%)
+      labels = scales::percent
     )
 }
 
@@ -124,6 +124,12 @@ for (sector in exposed_groups) {
   p3 <- plot_trends(wage_share_data, sector, "Wage_Share", "Wage Share", "Wage Share Trend")
   print(p3)
 }
+
+
+
+
+
+## COMPARISON GROWTH RATES #####################################################
 
 
 ### comparing the annual growth rate with other sectors? ###
@@ -167,7 +173,7 @@ ggplot(comparison_data, aes(x = Year, y = growth, color = Description, group = D
 
 
 
-## CAPITAL INTENSITY MEASURES 
+## CAPITAL INTENSITY MEASURES  #################################################
 
 # mesurer l'intensité capitalistique sur le début de la période (2012-2016)
 # mesurer l'intensité capitalistique sur les dernières années (2018-2023)
@@ -226,5 +232,155 @@ ggplot(comparison_capital_intensity_data, aes(x = Year, y = Capital_Intensity, c
        x = "Year",
        y = "Capital Intensity") +
   theme_minimal()
+
+
+
+
+
+## WAGE SHARE COMPARISON #######################################################
+
+# raw wage share
+
+# all india
+all_india_wage_share <- calculate_wage_share(asi_all_years, "All India")
+
+all_india_stats <- all_india_wage_share %>%
+  summarise(
+    min_wage_share = min(Wage_Share, na.rm = TRUE),
+    max_wage_share = max(Wage_Share, na.rm = TRUE),
+    avg_wage_share = mean(Wage_Share, na.rm = TRUE)
+  )
+
+# min max avg for sectors
+exposed_stats <- asi_all_years %>%
+  filter(Description %in% exposed_groups) %>%
+  mutate(Wage_Share = `Wages to Workers` / `Total Output`) %>%
+  group_by(Description) %>%
+  summarise(
+    min_wage_share = min(Wage_Share, na.rm = TRUE),
+    max_wage_share = max(Wage_Share, na.rm = TRUE),
+    avg_wage_share = mean(Wage_Share, na.rm = TRUE)
+  )
+
+# display
+cat("\n--- Wage Share Statistics for All India ---\n")
+print(all_india_stats)
+
+cat("\n--- Wage Share Statistics for Exposed Sectors ---\n")
+print(exposed_stats)
+
+# plot all india
+p_india <- plot_trends(all_india_wage_share, "All India", "Wage_Share", "Wage Share", "Wage Share Trend")
+print(p_india)
+
+
+
+
+# WE WILL LOOK AT ADJUSTED WAGE SHARE
+
+# calculate it for all india
+# compare min - max - avg values between exposed sectors and all india
+# plot wage share for india (for comparison purposes)
+
+
+
+
+# calculate adjusted wage share 
+calculate_adjusted_wage_share <- function(data, sector) {
+  sector_data <- data %>%
+    filter(Description == sector) %>%
+    mutate(Adjusted_Wage_Share = `Wages to Workers` / `Net Value Added`) %>%
+    drop_na(Adjusted_Wage_Share)
+  return(sector_data)
+}
+
+# plot
+plot_adjusted_trends <- function(data, y_var, y_label, title) {
+  ggplot(data, aes(x = Year, y = !!sym(y_var), group = Description, color = Description)) +
+    geom_line(na.rm = TRUE, linewidth = 0.8) +
+    geom_point(na.rm = TRUE, size = 2.5) +
+    labs(
+      title = title,
+      x = "Year",
+      y = y_label
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      panel.grid.major = element_line(color = "gray90", linetype = "dashed"),
+      panel.grid.minor = element_line(color = "gray95", linetype = "dotted"),
+      panel.background = element_rect(fill = "white", color = "gray50"),
+      legend.position = "right"
+    ) +
+    scale_x_continuous(
+      breaks = unique(data$Year)
+    ) +
+    scale_y_continuous(
+      labels = scales::percent
+    ) +
+    scale_color_manual(
+      values = c(
+        "All India" = "red",
+        "BASIC METALS" = "darkgreen",
+        "CHEMICALS AND CHEMICAL PRODUCTS" = "blue",
+        "OTHER NON-METALLIC MINERAL PRODUCTS" = "purple"
+      )
+    )
+}
+
+
+############## ADJUSTED WAGE SHARE COMPARISON (added value) 
+
+# adjusted wage share "All India"
+all_india_adj_wage_share <- calculate_adjusted_wage_share(asi_all_years, "All India")
+
+# adjusted wage share for exposed sectors
+exposed_adj_wage_share <- asi_all_years %>%
+  filter(Description %in% exposed_groups) %>%
+  mutate(Adjusted_Wage_Share = `Wages to Workers` / `Net Value Added`)
+
+# combine data for the comparative plot
+adj_wage_share_plot_data <- bind_rows(
+  all_india_adj_wage_share %>%
+    mutate(Description = as.factor("All India")),
+  exposed_adj_wage_share %>%
+    mutate(Description = as.factor(Description))
+)
+
+# stats for "All India"
+all_india_adj_stats <- all_india_adj_wage_share %>%
+  summarise(
+    min_adj_wage_share = min(Adjusted_Wage_Share, na.rm = TRUE),
+    max_adj_wage_share = max(Adjusted_Wage_Share, na.rm = TRUE),
+    avg_adj_wage_share = mean(Adjusted_Wage_Share, na.rm = TRUE)
+  )
+
+# stats for the sectors
+exposed_adj_stats <- exposed_adj_wage_share %>%
+  group_by(Description) %>%
+  summarise(
+    min_adj_wage_share = min(Adjusted_Wage_Share, na.rm = TRUE),
+    max_adj_wage_share = max(Adjusted_Wage_Share, na.rm = TRUE),
+    avg_adj_wage_share = mean(Adjusted_Wage_Share, na.rm = TRUE)
+  )
+
+# display
+cat("\n--- Adjusted Wage Share Statistics for All India ---\n")
+print(all_india_adj_stats)
+
+cat("\n--- Adjusted Wage Share Statistics for Exposed Sectors ---\n")
+print(exposed_adj_stats)
+
+# plot
+p_adj_comparison <- plot_adjusted_trends(
+  adj_wage_share_plot_data,
+  "Adjusted_Wage_Share",
+  "Adjusted Wage Share (Value Added Basis)",
+  "Adjusted Wage Share Trend: All India vs Exposed Sectors"
+)
+print(p_adj_comparison)
+
+
+
+
 
 
