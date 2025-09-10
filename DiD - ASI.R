@@ -22,8 +22,7 @@ exposed_groups <- c("BASIC METALS", "OTHER NON-METALLIC MINERAL PRODUCTS", "CHEM
 
 
 ## ADDING VARIABLES
-
-# vulnerability indices
+## ADDING VARIABLES
 asi_data <- asi_all_years %>%
   mutate(
     wage_share = (`Wages to Workers` / `Net Value Added`),
@@ -40,12 +39,10 @@ asi_data <- asi_all_years %>%
   ) %>%
   select(-invested_capital_lag, -fixed_capital_lag)  # Supprimer les colonnes temporaires
 
-
-
-# performance indices
+# Performance indices
 asi_data <- asi_data %>%
-  arrange(Year) %>%  # Assurez-vous que les données sont triées par année
-  group_by(`NIC-2008`) %>%  # Si vous voulez calculer par secteur (optionnel)
+  arrange(Year) %>%
+  group_by(`NIC-2008`) %>%
   mutate(
     # Croissance de la production (log-difference)
     output_growth = log(`Total Output`) - lag(log(`Total Output`), 1),
@@ -54,55 +51,25 @@ asi_data <- asi_data %>%
     # Marge bénéficiaire
     profit_margin = (`Net Value Added` - `Total Emoluments`) / `Total Output`
   ) %>%
-  ungroup()  # Retirer le groupement si utilisé
+  ungroup()
 
-colnames(asi_data)
+## DEFINITION DES GROUPES DE CONTRÔLE
+controls_heavy <- c(
+  "MACHINERY AND EQUIPMENT",
+  "MOTOR VEHICLES",
+  "ELECTRICAL EQUIPMENT"
+)
 
+controls_manufacture <- c(
+  "TEXTILES",
+  "RUBBER AND PLASTICS",
+  "FABRICATED METAL PRODUCTS"
+)
 
-## BUILDING THE CONTROLS 
-
-# three groups, as heavy as the exposed sector
-
-controls_heavy <- c("MACHINERY AND EQUIPMENT","MOTOR VEHICLES","ELECTRICAL EQUIPMENT")
-controls_manufacture <- c("TEXTILES","RUBBER AND PLASTICS","FABRICATED METAL PRODUCTS")
-controls_light <- c("FOOD PRODUCTS","PHARMACEUTICALS, MEDICINAL CHEMICAL AND BOTANICAL PRODUCTS","COMPUTER, ELECTRONIC AND OPTICAL PRODUCTS")
-
-
-
-## BUILDING THE REGRESSIONS
-
-#install.packages("plm")
-#install.packages("fixest")
-library(plm)
-library(fixest)
-
-# did on vulnerability ?
-# we make an average of the industries counted in the controls vectors
-# we add fixed effects for the year
-
-
-# Function:
-run_did <- function(data, treated_group, control_groups, outcome_var) {
-  data <- data %>%
-    mutate(
-      treated = ifelse(`Description` %in% treated_group, 1, 0),
-      control = ifelse(`Description` %in% control_groups, 1, 0),
-      post = ifelse(Year >= 2020, 1, 0)  
-    ) %>%
-    filter(!is.na(treated) & !is.na(control) & treated + control == 1)  # Garde seulement traités et contrôles
-  
-  # Estimation DiD avec effets fixes par secteur et année
-  did_model <- feols(
-    reformulate(outcome_var, response = outcome_var),
-    ~ treated * post | `NIC-2008` + Year,
-    data = data,
-    cluster = ~ `NIC-2008`
-  )
-  
-  return(tidy(did_model))
-}
-
-
-
+controls_light <- c(
+  "FOOD PRODUCTS",
+  "PHARMACEUTICALS, MEDICINAL CHEMICAL AND BOTANICAL PRODUCTS",
+  "COMPUTER, ELECTRONIC AND OPTICAL PRODUCTS"
+)
 
 

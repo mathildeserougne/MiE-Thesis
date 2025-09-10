@@ -42,7 +42,9 @@ exposed_groups <- c("BASIC METALS", "OTHER NON-METALLIC MINERAL PRODUCTS", "CHEM
 
 ########### PRE TRENDS TO COMPARE PARALLELISM #################################
 
-# 1) output 
+####################### ignorer output c'est nul ###############################
+
+# 1) output (finalement c'est nul comme idée)
 
 # 1.1. output of exposed groups
 
@@ -178,5 +180,56 @@ ggplot(asi_aggregated, aes(x = Year, y = Total_Output, color = treated, group = 
 
 
 
+##################################################################################
+##################################################################################
 
 
+## ADDING VARIABLES
+
+asi_data <- asi_all_years %>%
+  arrange(`NIC-2008`, Year) %>%  # Tri par secteur puis par année
+  group_by(`NIC-2008`) %>%     # Regrouper par secteur
+  mutate(
+    wage_share = (`Wages to Workers` / `Net Value Added`),
+    capital_intensity = (`Fixed Capital` / Workers),
+    productivity = (`Net Value Added` / Workers),
+    # Calcul du taux d'investissement (variation annuelle)
+    invested_capital_lag = lag(`Invested Capital`, 1),
+    fixed_capital_lag = lag(`Fixed Capital`, 1),
+    investment_rate = ifelse(
+      !is.na(fixed_capital_lag) & fixed_capital_lag != 0,
+      ((`Invested Capital` - invested_capital_lag) / fixed_capital_lag),
+      NA_real_
+    ),
+    # Croissance de la production (log-difference)
+    output_growth = ifelse(
+      !is.na(lag(`Total Output`, 1)) & lag(`Total Output`, 1) > 0 & `Total Output` > 0,
+      log(`Total Output`) - log(lag(`Total Output`, 1)),
+      NA_real_
+    ),
+    # Croissance de l'emploi (log-difference)
+    employment_growth = ifelse(
+      !is.na(lag(Workers, 1)) & lag(Workers, 1) > 0 & Workers > 0,
+      log(Workers) - log(lag(Workers, 1)),
+      NA_real_
+    ),
+    # Marge bénéficiaire
+    profit_margin = ifelse(
+      `Total Output` != 0,
+      (`Net Value Added` - `Total Emoluments`) / `Total Output`,
+      NA_real_
+    )
+  ) %>%
+  ungroup() %>%
+  select(-invested_capital_lag, -fixed_capital_lag)  # Supprimer les colonnes temporaires
+
+
+
+
+
+
+
+
+
+
+# PARALLEL TRENDS DE INVESTMENT RATE ##########################################
