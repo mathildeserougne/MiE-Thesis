@@ -828,3 +828,329 @@ print(valid_controls)
 #### DID ABOUT CAPITAL INTENSITY #################
 
 
+# correlations: function
+get_correlations_capital <- function(exposed_sector, data, pre_period_year) {
+  pre_data <- data %>%
+    filter(Year < pre_period_year) %>%
+    select(Year, Description, capital_intensity) %>%
+    drop_na(capital_intensity)
+  
+  exposed_data <- pre_data %>%
+    filter(Description == exposed_sector) %>%
+    arrange(Year)
+  
+  control_sectors <- unique(pre_data$Description)
+  control_sectors <- control_sectors[control_sectors != exposed_sector]
+  
+  correlations <- lapply(control_sectors, function(control_sector) {
+    control_data <- pre_data %>%
+      filter(Description == control_sector) %>%
+      arrange(Year)
+    
+    merged_data <- merge(exposed_data, control_data, by = "Year", suffixes = c("_exposed", "_control"))
+    
+    if (nrow(merged_data) > 1) {
+      cor(merged_data$capital_intensity_exposed, merged_data$capital_intensity_control, use = "complete.obs")
+    } else {
+      NA
+    }
+  })
+  
+  result <- data.frame(
+    Secteur = control_sectors,
+    Correlation = unlist(correlations)
+  ) %>%
+    arrange(desc(Correlation)) %>%
+    na.omit() %>%
+    head(5)
+  
+  return(result)
+}
+
+
+# correlations: results
+
+exposed_groups <- c("BASIC METALS", "OTHER NON-METALLIC MINERAL PRODUCTS", "CHEMICALS AND CHEMICAL PRODUCTS")
+pre_period_year <- 2021
+
+
+control_lists_capital <- list()
+
+for (sector in exposed_groups) {
+  cat("\nTop 5 secteurs corrélés avec", sector, "avant", pre_period_year, "pour capital_intensity:\n")
+  result <- get_correlations_capital(sector, asi_all_years, pre_period_year)
+  print(result)
+  control_lists_capital[[sector]] <- result$Secteur
+}
+
+# no possibility of doing a common list of controls.
+
+# individual lists of control candidates: 
+
+controls_basic_metals <- c(
+  "OTHER MINING AND QUARRYING",
+  "PAPER AND PAPER PRODUCTS",
+  "All India",
+  "PHARMACEUTICALS, MEDICINAL CHEMICAL AND BOTANICAL PRODUCTS",
+  "CHEMICALS AND CHEMICAL PRODUCTS"
+)
+
+controls_minerals <- c(
+  "CROP & ANIMAL PRODUCTION, HUNTING & RELATED SERVICE ACTIVITIES",
+  "WEARING APPAREL",
+  "OTHER MINING AND QUARRYING",
+  "REPAIR AND INSTALLATION OF MACHINERY AND EQUIPMENT",
+  "MANUFACTURE OF FURNITURE"
+)
+
+controls_chemicals <- c(
+  "CROP & ANIMAL PRODUCTION, HUNTING & RELATED SERVICE ACTIVITIES",
+  "TEXTILES",
+  "FOOD PRODUCTS",
+  "All India",
+  "COKE AND REFINED PETROLEUM PRODUCTS"
+)
+
+
+# parallel trends test: function
+
+test_parallel_trends_capital <- function(exposed_sector, control_sector, data, pre_year) {
+  pre_data <- data %>%
+    filter(Description %in% c(exposed_sector, control_sector) & Year < pre_year) %>%
+    drop_na(capital_intensity)
+  
+  # Vérifier qu'il y a assez de données
+  if (n_distinct(pre_data$Description) < 2 || n_distinct(pre_data$Year) < 2) {
+    return(NA)
+  }
+  
+  # Estimer le modèle
+  model <- try(
+    lm(capital_intensity ~ Year * Description, data = pre_data),
+    silent = TRUE
+  )
+  
+  if (inherits(model, "try-error")) {
+    return(NA)
+  }
+  
+  # Extraire la p-value de l'interaction Year:Description
+  tidy_model <- tidy(model, conf.int = TRUE)
+  p_value <- tidy_model %>%
+    filter(str_detect(term, "Year:Description")) %>%
+    pull(p.value) %>%
+    first()
+  
+  return(p_value)
+}
+
+# parallel trends test: results
+
+# basic metals
+cat("\n--- Parallel trends test for BASIC METALS ---\n")
+results_basic_metals <- map(controls_basic_metals, ~ {
+  p_value <- test_parallel_trends_capital("BASIC METALS", .x, asi_all_years, 2021)
+  data.frame(
+    Control = .x,
+    P_value = p_value,
+    Parallel_Trends = ifelse(!is.na(p_value) & p_value > 0.05, "Oui", "Non")
+  )
+}) %>%
+  bind_rows()
+
+print(results_basic_metals)
+
+valid_controls_basic_metals <- results_basic_metals %>%
+  filter(Parallel_Trends == "Oui") %>%
+  pull(Control)
+
+cat("\nValidates controls for BASIC METALS :\n")
+print(valid_controls_basic_metals)
+
+
+
+# for minerals
+cat("\n--- Parallel trends test for OTHER NON-METALLIC MINERAL PRODUCTS ---\n")
+results_minerals <- map(controls_minerals, ~ {
+  p_value <- test_parallel_trends_capital("OTHER NON-METALLIC MINERAL PRODUCTS", .x, asi_all_years, 2021)
+  data.frame(
+    Control = .x,
+    P_value = p_value,
+    Parallel_Trends = ifelse(!is.na(p_value) & p_value > 0.05, "Oui", "Non")
+  )
+}) %>%
+  bind_rows()
+
+print(results_minerals)
+
+valid_controls_minerals <- results_minerals %>%
+  filter(Parallel_Trends == "Oui") %>%
+  pull(Control)
+
+cat("\nValidates controls for OTHER NON-METALLIC MINERAL PRODUCTS :\n")
+print(valid_controls_minerals)
+
+
+
+# for chemicals: 
+
+cat("\n--- Parallel trends test for CHEMICALS AND CHEMICAL PRODUCTS ---\n")
+results_chemicals <- map(controls_chemicals, ~ {
+  p_value <- test_parallel_trends_capital("CHEMICALS AND CHEMICAL PRODUCTS", .x, asi_all_years, 2021)
+  data.frame(
+    Control = .x,
+    P_value = p_value,
+    Parallel_Trends = ifelse(!is.na(p_value) & p_value > 0.05, "Oui", "Non")
+  )
+}) %>%
+  bind_rows()
+
+print(results_chemicals)
+
+valid_controls_chemicals <- results_chemicals %>%
+  filter(Parallel_Trends == "Oui") %>%
+  pull(Control)
+
+cat("\nValidated controls for CHEMICALS AND CHEMICAL PRODUCTS :\n")
+print(valid_controls_chemicals)
+
+
+# final selection of controls: 
+
+final_controls_capital <- list(
+  BasicMetals = list(
+    exposed = "BASIC METALS",
+    controls = valid_controls_basic_metals
+  ),
+  Minerals = list(
+    exposed = "OTHER NON-METALLIC MINERAL PRODUCTS",
+    controls = valid_controls_minerals
+  ),
+  Chemicals = list(
+    exposed = "CHEMICALS AND CHEMICAL PRODUCTS",
+    controls = valid_controls_chemicals
+  )
+)
+
+
+
+cat("\n--- Final list of controls for the DiD (capital_intensity) ---\n")
+print(final_controls_capital)
+
+# Mise à jour de la liste des contrôles pour BASIC METALS
+# exclude chemicals which is exposed
+final_controls_capital$BasicMetals$controls <-
+  final_controls_capital$BasicMetals$controls[final_controls_capital$BasicMetals$controls != "CHEMICALS AND CHEMICAL PRODUCTS"]
+# exclude all india?
+#final_controls_capital$BasicMetals$controls <-
+#  final_controls_capital$BasicMetals$controls[final_controls_capital$BasicMetals$controls != "All India"]
+
+
+# Mise à jour de la liste des contrôles pour MINERALS
+# exclude the volatile REPAIR etc
+final_controls_capital$Minerals$controls <-
+  final_controls_capital$Minerals$controls[final_controls_capital$Minerals$controls != "REPAIR AND INSTALLATION OF MACHINERY AND EQUIPMENT"]
+
+# Afficher la liste corrigée
+cat("\n--- Liste finale corrigée des contrôles pour les DiD (capital_intensity) ---\n")
+print(final_controls_capital)
+
+
+# DID
+
+# function
+
+estimate_did_capital <- function(exposed_sector, control_sectors, data) {
+  # Préparation des données
+  did_data <- data %>%
+    filter(Description %in% c(exposed_sector, control_sectors)) %>%
+    drop_na(capital_intensity) %>%
+    mutate(
+      Exposed = ifelse(Description == exposed_sector, 1, 0),
+      Post_2021 = ifelse(Year >= 2021, 1, 0),
+      Description = factor(Description, levels = c(exposed_sector, control_sectors))
+    )
+  
+  # Estimation du modèle DiD
+  model <- lm(
+    capital_intensity ~ Exposed * Post_2021 + factor(Year) + factor(Description),
+    data = did_data
+  )
+  
+  # Résultats du modèle
+  tidied_results <- tidy(model, conf.int = TRUE)
+  did_effect <- tidied_results %>%
+    filter(term == "Exposed:Post_2021") %>%
+    select(term, estimate, p.value)
+  
+  # Affichage des résultats
+  cat("\n--- DiD Results for", exposed_sector, "(capital_intensity) ---\n")
+  print(did_effect)
+  
+  # Calcul des moyennes par groupe et par année
+  trends_data <- did_data %>%
+    group_by(Description, Year) %>%
+    summarise(mean_capital_intensity = mean(capital_intensity), .groups = "drop") %>%
+    ungroup()
+  
+  # Normalisation par rapport à la première année disponible
+  first_year <- min(trends_data$Year)
+  trends_data <- trends_data %>%
+    group_by(Description) %>%
+    mutate(
+      ref_value = mean_capital_intensity[Year == first_year],
+      normalized_capital_intensity = (mean_capital_intensity / ref_value) * 100
+    ) %>%
+    ungroup() %>%
+    filter(Year >= first_year)
+  
+  # Création d'un vecteur de couleurs
+  colors <- c()
+  colors[exposed_sector] <- "red"
+  for (i in seq_along(control_sectors)) {
+    colors[control_sectors[i]] <- c("blue", "green", "purple", "orange", "cyan")[i]
+  }
+  
+  # Tracé des tendances normalisées
+  p <- ggplot(trends_data, aes(x = Year, y = normalized_capital_intensity, color = Description, group = Description)) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 2) +
+    geom_vline(xintercept = 2021, linetype = "dashed", color = "black", linewidth = 1) +
+    labs(
+      title = paste("Normalised trends of capital_intensity (", first_year, "= 100):", exposed_sector),
+      x = "Year",
+      y = "Normalised capital intensity",
+      color = "Sector"
+    ) +
+    scale_color_manual(values = colors) +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+  
+  return(list(model = model, results = did_effect, plot = p, data = trends_data))
+}
+
+
+# execution for each exposed sector
+
+results_basic_metals <- estimate_did_capital(
+  exposed_sector = final_controls_capital$BasicMetals$exposed,
+  control_sectors = final_controls_capital$BasicMetals$controls,
+  data = asi_all_years
+)
+print(results_basic_metals$plot)
+
+
+results_minerals <- estimate_did_capital(
+  exposed_sector = final_controls_capital$Minerals$exposed,
+  control_sectors = final_controls_capital$Minerals$controls,
+  data = asi_all_years
+)
+print(results_minerals$plot)
+# significant with and without repair, which was very volatile!
+
+# ça marche pas pour chemicals, pas de contrôle sur toute la période
+
+
+
+
+
