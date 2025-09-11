@@ -14,7 +14,7 @@ library(broom)
 library(tidyr)
 library(readxl)
 
-
+################################################################################
 ## DATA ########################################################################
 
 
@@ -64,7 +64,8 @@ asi_all_years <- asi_all_years %>%
 # Affichage des premières lignes pour vérifier
 head(asi_all_years)
 
-
+################################################################################
+################################################################################
 
 
 ## INVESTMENT RATE #######################
@@ -392,9 +393,9 @@ ggplot(trends_minerals, aes(x = Year, y = normalized_rate, color = Description))
 
 
 
-#####################
+################################################################################
 
-# profit margins
+# PROFIT MARGINS
 
 
 # selecting controls per correlation
@@ -564,6 +565,7 @@ control_groups_profit <- list(
 )
 
 
+
 ## did
 
 estimate_did_profit_margin <- function(exposed_sector, control_sectors, data) {
@@ -574,7 +576,7 @@ estimate_did_profit_margin <- function(exposed_sector, control_sectors, data) {
     mutate(
       Exposed = ifelse(Description == exposed_sector, 1, 0),
       Post_2021 = ifelse(Year >= 2021, 1, 0),
-      Description = factor(Description, levels = c(exposed_sector, control_sectors))  # Définir l'ordre des niveaux
+      Description = factor(Description, levels = c(exposed_sector, control_sectors))
     )
   
   # Estimation du modèle DiD
@@ -610,29 +612,33 @@ estimate_did_profit_margin <- function(exposed_sector, control_sectors, data) {
     ungroup() %>%
     filter(Year >= first_year)
   
-  # Définition des couleurs (le secteur exposé est toujours en premier)
-  sector_colors <- c(exposed_sector = "red")
-  control_colors <- c("blue", "green", "purple")
-  names(control_colors) <- control_sectors
-  sector_colors <- c(sector_colors, control_colors)
+  # Création d'un vecteur de couleurs
+  colors <- c()
+  colors[exposed_sector] <- "red"
+  for (i in seq_along(control_sectors)) {
+    colors[control_sectors[i]] <- c("blue", "green", "purple", "orange", "cyan")[i]
+  }
   
   # Tracé des tendances normalisées
   p <- ggplot(trends_data, aes(x = Year, y = normalized_profit_margin, color = Description, group = Description)) +
-    geom_line(size = 1.2) +
+    geom_line(linewidth = 1.2) +
     geom_point(size = 2) +
-    geom_vline(xintercept = 2021, linetype = "dashed", color = "black", size = 1) +
+    geom_vline(xintercept = 2021, linetype = "dashed", color = "black", linewidth = 1) +
     labs(
-      title = paste("Évolution normalisée de profit_margin (", first_year, "= 100):", exposed_sector),
-      x = "Année",
-      y = "Marge bénéficiaire normalisée",
-      color = "Secteur"
+      title = paste("Normalised trends of profit_margin (", first_year, "= 100):", exposed_sector),
+      x = "Year",
+      y = "Normalised profit margin",
+      color = "Sector"
     ) +
-    scale_color_manual(values = sector_colors) +
+    scale_color_manual(values = colors) +
     theme_minimal() +
     theme(legend.position = "bottom")
   
   return(list(model = model, results = did_effect, plot = p, data = trends_data))
 }
+
+
+
 
 # Exécution pour BASIC METALS
 results_basic_metals <- estimate_did_profit_margin(
@@ -650,19 +656,6 @@ print(results_basic_metals$plot)
 
 
 
-
-# BASIC METALS
-results_basic_metals <- estimate_did_profit_margin(
-  exposed_sector = control_groups_profit$BasicMetals$exposed,
-  control_sectors = control_groups_profit$BasicMetals$controls,
-  data = asi_all_years
-)
-if (!is.null(results_basic_metals$plot)) print(results_basic_metals$plot)
-
-# YES
-
-
-
 # OTHER NON-METALLIC MINERAL PRODUCTS
 results_minerals <- estimate_did_profit_margin(
   exposed_sector = control_groups_profit$Minerals$exposed,
@@ -671,6 +664,10 @@ results_minerals <- estimate_did_profit_margin(
 )
 if (!is.null(results_minerals$plot)) print(results_minerals$plot)
 
+# non significant !
+
+
+
 # CHEMICALS AND CHEMICAL PRODUCTS
 results_chemicals <- estimate_did_profit_margin(
   exposed_sector = control_groups_profit$Chemicals$exposed,
@@ -678,5 +675,156 @@ results_chemicals <- estimate_did_profit_margin(
   data = asi_all_years
 )
 if (!is.null(results_chemicals$plot)) print(results_chemicals$plot)
+
+# non significant !
+
+
+
+
+###### GROUP DID FOR INVESTMENT RATE ###############################
+
+
+
+# calcul des corrélations moyennes
+
+get_mean_correlation <- function(control_sector, treated_groups, data, pre_period_year) {
+  pre_data <- data %>%
+    filter(Year < pre_period_year) %>%
+    select(Year, Description, profit_margin) %>%
+    drop_na(profit_margin)
+  
+  correlations <- lapply(treated_groups, function(exposed_sector) {
+    exposed_data <- pre_data %>%
+      filter(Description == exposed_sector) %>%
+      arrange(Year)
+    control_data <- pre_data %>%
+      filter(Description == control_sector) %>%
+      arrange(Year)
+    merged_data <- merge(exposed_data, control_data, by = "Year", suffixes = c("_exposed", "_control"))
+    if (nrow(merged_data) > 1) {
+      cor(merged_data$profit_margin_exposed, merged_data$profit_margin_control, use = "complete.obs")
+    } else {
+      NA
+    }
+  })
+  return(mean(unlist(correlations), na.rm = TRUE))
+}
+
+# calcul du top 5 candidats
+
+treated_groups <- c("BASIC METALS", "OTHER NON-METALLIC MINERAL PRODUCTS", "CHEMICALS AND CHEMICAL PRODUCTS")
+pre_period_year <- 2021
+
+# Liste de tous les secteurs de contrôle possibles
+all_controls <- unique(asi_all_years$Description)
+all_controls <- all_controls[!all_controls %in% treated_groups]
+
+# Calcul des corrélations moyennes
+correlations_mean <- sapply(all_controls, function(control_sector) {
+  get_mean_correlation(control_sector, treated_groups, asi_all_years, pre_period_year)
+})
+
+# Top 5 secteurs de contrôle les plus corrélés
+top_controls <- data.frame(
+  Secteur = all_controls,
+  Correlation = correlations_mean
+) %>%
+  arrange(desc(Correlation)) %>%
+  na.omit() %>%
+  head(5) %>%
+  pull(Secteur)
+
+cat("\nTop 5 secteurs corrélés avec le groupe de traités (avant", pre_period_year, ") pour profit_margin:\n")
+print(top_controls)
+
+
+# gathering variables in vectors
+
+treated_groups <- c(
+  "BASIC METALS",
+  "OTHER NON-METALLIC MINERAL PRODUCTS",
+  "CHEMICALS AND CHEMICAL PRODUCTS"
+)
+
+control_groups <- c(
+  "FOOD PRODUCTS",
+  "LEATHER AND RELATED PRODUCTS",
+  "MACHINERY AND EQUIPMENT N.E.C.",
+  "ELECTRICAL EQUIPMENT",
+  "BEVERAGES"
+)
+
+
+# function to test parallel trends
+
+test_parallel_trends_group <- function(treated_groups, control_sector, data, pre_year) {
+  pre_data <- data %>%
+    filter(Description %in% c(treated_groups, control_sector) & Year < pre_year) %>%
+    drop_na(profit_margin) %>%
+    mutate(
+      Group = ifelse(Description %in% treated_groups, "Treated", "Control")
+    )
+  
+  # enough data
+  if (n_distinct(pre_data$Group) < 2 || n_distinct(pre_data$Year) < 2) {
+    return(NA)
+  }
+  
+  # model estimation
+  model <- try(
+    lm(profit_margin ~ Year * Group, data = pre_data),
+    silent = TRUE
+  )
+  
+  if (inherits(model, "try-error")) {
+    return(NA)
+  }
+  
+  # extract p value
+  tidy_model <- tidy(model, conf.int = TRUE)
+  p_value <- tidy_model %>%
+    filter(term == "Year:GroupControl") %>%
+    pull(p.value) %>%
+    first()
+  
+  return(p_value)
+}
+
+
+# testing for our list of candidates
+
+pre_period_year <- 2021
+
+results_parallel_trends <- map(control_groups, ~ {
+  p_value <- test_parallel_trends_group(treated_groups, .x, asi_all_years, pre_period_year)
+  data.frame(
+    Control = .x,
+    P_value = p_value,
+    Parallel_Trends = ifelse(!is.na(p_value) & p_value > 0.05, "Oui", "Non")
+  )
+}) %>%
+  bind_rows()
+
+# display
+cat("\n--- Parallel trends test results: ---\n")
+print(results_parallel_trends)
+
+# validation? (p > 0.05)
+valid_controls <- results_parallel_trends %>%
+  filter(Parallel_Trends == "Oui") %>%
+  pull(Control)
+
+cat("\n Validated controls:\n")
+print(valid_controls)
+
+
+# not possible to group the exposed to do a collective did about profit margins
+
+
+
+
+##########
+
+#### DID ABOUT CAPITAL INTENSITY #################
 
 
