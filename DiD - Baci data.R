@@ -22,7 +22,7 @@ library(tidyr)
 
 ## DATA (as defined in the script 'vulnerability in trade') 
 # this is just all flows coming from India
-baci_indian_pov <- read_csv("~/MiE 24-25/THESIS/baci_indian_pov.csv")
+baci_indian_pov <- read_csv("~/work/baci_indian_pov.csv")
 
 # Getting a filtered version with just the exposed products
 # HS codes communicated by the EU commission
